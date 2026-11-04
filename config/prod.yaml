@@ -1,0 +1,10 @@
+# Профиль prod — эксплуатация: без текстов пользователей в логах, слушаем все интерфейсы
+# (сервис работает в контейнере за обратным прокси).
+server:
+  host: 0.0.0.0
+logging:
+  level: INFO
+  log_payloads: false
+  max_field_chars: 200
+retry:
+  max_attempts: 3

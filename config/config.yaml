@@ -1,0 +1,68 @@
+# Базовая конфигурация. Профиль окружения (config/dev.yaml или config/prod.yaml)
+# накладывается поверх неё, выбор — переменной APP_ENV (по умолчанию dev).
+# Секреты (ключи) здесь НЕ хранятся — только в .env / переменных окружения.
+
+server:
+  host: 127.0.0.1
+  port: 8000
+  max_body_bytes: 65536            # защита от гигантских тел запроса (HTTP 413)
+
+validation:
+  max_message_length: 1000         # ограничение длины поля message
+
+llm:
+  provider: gigachat               # gigachat | openai (любой OpenAI-совместимый API: OpenAI, OpenRouter, Ollama)
+  model: GigaChat-2
+  temperature: 0.2
+  max_tokens: 400
+  timeout_seconds: 30              # таймаут на ответ модели
+  connect_timeout_seconds: 5       # таймаут на установку соединения
+  parse_retries: 1                 # сколько раз переспросить модель, если ответ не по контракту
+  max_answer_chars: 2000           # ответ длиннее обрезается при постобработке
+
+  gigachat:
+    auth_url: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+    base_url: https://api.giga.chat/v1
+    scope: GIGACHAT_API_PERS       # GIGACHAT_API_PERS | GIGACHAT_API_B2B | GIGACHAT_API_CORP
+    token_refresh_margin_seconds: 60
+
+  openai:
+    base_url: https://api.openai.com/v1
+
+retry:
+  max_attempts: 3                  # всего попыток (1 + 2 ретрая), только для временных ошибок
+  base_delay_seconds: 0.5          # пауза: 0.5 → 1.0 → 2.0 … (экспоненциальный backoff + jitter)
+  max_delay_seconds: 4
+
+cache:
+  ttl_seconds: 600                 # 10 минут
+  max_entries: 1000
+  key_version: v1                  # повысьте при смене промптов/логики — старый кеш перестанет использоваться
+
+logging:
+  level: INFO
+  file: logs/service.log
+  max_field_chars: 500             # длинные поля в логах обрезаются
+  log_payloads: true               # писать ли в лог тексты промптов и ответов (в prod — только длины)
+
+fallback:
+  message: "Сервис временно недоступен, попробуйте позже."
+
+# Сценарии бизнес-логики: у каждого свой системный промпт.
+# Модель обязана вернуть JSON {"answer": "..."} — это контракт, который проверяет постобработка.
+scenarios:
+  answer:
+    system_prompt: >-
+      Ты — полезный ассистент. Отвечай кратко и по существу, на языке вопроса.
+      Верни ответ строго в формате JSON без пояснений вокруг: {"answer": "<текст ответа>"}.
+  summarize:
+    system_prompt: >-
+      Ты — редактор. Отвечай только на русском языке.
+      Сделай краткое резюме присланного текста в 2–3 предложениях,
+      сохранив ключевые факты и ничего не добавляя от себя.
+      Верни ответ строго в формате JSON без пояснений вокруг: {"answer": "<резюме на русском языке>"}.
+default_scenario: answer
+
+# Добавляется в конец сообщения пользователя: последняя инструкция модели должна быть про формат.
+format_reminder: >-
+  Верни ответ строго в формате JSON без пояснений вокруг: {"answer": "<текст>"}.
