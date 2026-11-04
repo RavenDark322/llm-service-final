@@ -66,8 +66,17 @@ jobs:
           docker run -d --name llm-service -p 8000:8000 \
             -e LLM_PROVIDER=openai -e LLM_BASE_URL=http://127.0.0.1:9/v1 -e LLM_TIMEOUT=2 \
             llm-service:ci
-      - name: Health check
-        run: curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:8000/health
+      - name: Wait until healthy
+        # Контейнеру нужно время на старт: пока приложение не слушает порт, docker-proxy сбрасывает
+        # соединение (curl 56), а такие ошибки --retry не повторяет. Поэтому — явное ожидание.
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/health; then
+              echo; echo "Service is healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "Service did not become healthy in 30s"; exit 1
       - name: Invalid input → 400
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/chat \
