@@ -1,0 +1,21 @@
+[project]
+name = "llm-service-final"
+version = "1.0.0"
+description = "End-to-end LLM-сервис: HTTP API, GigaChat / OpenAI-совместимые модели, ретраи, fallback, кеш, CI"
+requires-python = ">=3.10"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = ["venv", ".venv"]
+
+[tool.ruff.lint]
+# E/W — pycodestyle, F — pyflakes, I — порядок импортов, B — bugbear (частые баги)
+select = ["E", "F", "W", "I", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["api", "cache", "config", "llm", "observability", "services"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

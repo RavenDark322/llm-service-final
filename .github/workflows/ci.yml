@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Ruff check
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    needs: lint
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Check dependency consistency
+        run: pip check
+      - name: Run tests
+        run: python -m pytest -q
+
+  build:
+    name: Docker build + smoke test
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t llm-service:ci .
+      - name: Start container (LLM provider deliberately unreachable)
+        run: |
+          docker run -d --name llm-service -p 8000:8000 \
+            -e LLM_PROVIDER=openai -e LLM_BASE_URL=http://127.0.0.1:9/v1 -e LLM_TIMEOUT=2 \
+            llm-service:ci
+      - name: Wait until healthy
+        # Контейнеру нужно время на старт: пока приложение не слушает порт, docker-proxy сбрасывает
+        # соединение (curl 56), а такие ошибки --retry не повторяет. Поэтому — явное ожидание.
+        run: |
+          for i in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/health; then
+              echo; echo "Service is healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "Service did not become healthy in 30s"; exit 1
+      - name: Invalid input → 400
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/chat \
+            -H 'Content-Type: application/json' -d '{}')
+          echo "HTTP $code"
+          test "$code" = "400"
+      - name: Provider down → 503 fallback
+        run: |
+          body=$(curl -s -w '\n%{http_code}' -X POST http://127.0.0.1:8000/chat \
+            -H 'Content-Type: application/json' -d '{"message": "ping"}')
+          echo "$body"
+          test "$(echo "$body" | tail -n 1)" = "503"
+          echo "$body" | head -n 1 | grep -Eq '"source": ?"fallback"'
+      - name: Container logs
+        if: always()
+        run: docker logs llm-service
