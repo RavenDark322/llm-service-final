@@ -1,0 +1,16 @@
+# секреты и локальное окружение
+.env
+venv/
+.venv/
+
+# артефакты
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# сертификат НУЦ Минцифры скачивается локально (см. certs/README.md)
+certs/*.cer
+certs/*.crt
+certs/*.pem
